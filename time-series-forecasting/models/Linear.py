@@ -31,7 +31,7 @@ class Model(nn.Module):
                 output[:,:,i] = self.Linear[i](x[:,:,i])
             x = output
         else:
-            print("before linear x:",x.shape)
+            # print("before linear x:",x.shape)
             x = self.Linear(x.permute(0,2,1)).permute(0,2,1)
-            print("after linear x:", x.shape)
+            # print("after linear x:", x.shape)
         return x # [Batch, Output length, Channel]

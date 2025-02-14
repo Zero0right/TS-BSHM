@@ -99,27 +99,6 @@ def visual(true, preds=None, name='./pic/test.pdf'):
     plt.legend()
     plt.savefig(name, bbox_inches='tight')
 
-    import plotly.graph_objs as go
-    from plotly.subplots import make_subplots
-
-    # # 创建数据
-    # x = np.arange(1, len(true) + 1)
-    # trace_true = go.Scatter(x=x, y=true, name='GroundTruth', line=dict(width=2))
-    # layout = go.Layout(title=name, xaxis=dict(title='Time'), yaxis=dict(title='Value'))
-    # # 添加预测数据
-    # if preds is not None:
-    #     trace_pred = go.Scatter(x=x, y=preds, name='Prediction', line=dict(width=2))
-    #     fig = make_subplots(rows=1, cols=1)
-    #     fig.add_trace(trace_true)
-    #     fig.add_trace(trace_pred)
-    # else:
-    #     fig = go.Figure(data=[trace_true])
-    # # 设置图表布局和样式
-    # fig.layout.update(layout)
-    # # 显示图像
-    # fig.show()
-
-
 def test_params_flop(model,x_shape):
     """
     If you want to thest former's flop, you need to give default value to inputs in model.forward(), the following code can only pass one argument to forward()

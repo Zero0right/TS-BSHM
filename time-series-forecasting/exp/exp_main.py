@@ -3,7 +3,8 @@ from exp.exp_basic import Exp_Basic
 from models import PatchMixer, SegRNN, iTransformer, TSMixer, CNN_MLP_MLP, TIDE, CNN_GRU_RES, \
     CNN_GRU_RES_V2, CNN_GRU_GRU, CNN_MLP_MLP_V2, Transformer, Informer, DLinear, Linear, \
     NLinear, LSTM, CNN_LINEAR_LINEAR, CNN_LINEAR_LINEAR_V2, LBCNN_LINEAR, CNN_LINEAR, Reformer, GRU, BlockRNN, \
-    TCN, TCN_LINEAR, TCN_LSTM_LINEAR
+    TCN, TCN_LINEAR, TCN_LSTM_LINEAR, TCN_MLP, MLP, MLP_REV, MLP_Patch, MLP_TCN, MLP_REV_Patch, MLP_Patch_TCN, \
+    MLP_REV_TCN, MLP_REV_Patch_TCN, FEDformer, FreTS, PatchTST, ModernTCN, REV_Patch_TCN_Kan, REV_Patch_TCN2_MLP, REV_Patch_TCN2_KAN, REV_TCN_KAN, REV_TCN_CFFN_KAN
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
 
@@ -17,8 +18,10 @@ import os
 import time
 
 import warnings
-import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score
 
 warnings.filterwarnings('ignore')
 
@@ -26,19 +29,43 @@ from torch import Tensor
 import torch.nn.functional as F
 from torch.nn.modules import Module
 
-
 class CustomLoss(nn.Module):
     def __init__(self):
+        """
+        初始化 CustomHuberLoss 类。
+        """
         super().__init__()
+
     def forward(self, x, y):
-        return 0.5 * F.mse_loss(x, y) + 0.5 * F.l1_loss(x, y)
+        """
+        计算 Huber 损失。
+        :param x: 预测值。
+        :param y: 真实值。
+        :return: 计算得到的损失。
+        """
+        return F.huber_loss(x, y)
+
+# class CustomLoss(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#     def forward(self, x, y):
+#         return 0.5 * F.mse_loss(x, y) + 0.5 * F.l1_loss(x, y)
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
 
     def _build_model(self):
+        # MLP,MLP_REV,MLP_Patch,MLP_TCN,MLP_REV_Patch,MLP_Patch_TCN,MLP_REV_TCN,MLP_REV_Patch_TCN
         model_dict = {
+            'MLP': MLP,
+            'MLP_REV': MLP_REV,
+            'MLP_Patch': MLP_Patch,
+            'MLP_TCN': MLP_TCN,
+            'MLP_REV_Patch': MLP_REV_Patch,
+            'MLP_Patch_TCN': MLP_Patch_TCN,
+            'MLP_REV_TCN': MLP_REV_TCN,
+            'RPTM': MLP_REV_Patch_TCN,
             'PatchMixer': PatchMixer,
             'SegRNN': SegRNN,
             'iTransformer': iTransformer,
@@ -46,14 +73,15 @@ class Exp_Main(Exp_Basic):
             'CNN_MLP_MLP': CNN_MLP_MLP,
             'TIDE': TIDE,
             'CNN_GRU_RES': CNN_GRU_RES,
-            'TCN_LINEAR': TCN_LINEAR,
+            'TCN-L': TCN_LINEAR,
             'TCN_LSTM_LINEAR': TCN_LSTM_LINEAR,
+            'TCN-MLP': TCN_MLP,
             'CNN_GRU_RES_V2': CNN_GRU_RES_V2,
             'CNN_GRU_GRU': CNN_GRU_GRU,
             'CNN_MLP_MLP_V2': CNN_MLP_MLP_V2,
             'Transformer': Transformer,
             # 'Autoformer': Autoformer,
-            # 'FEDformer': FEDformer,
+            'FEDformer': FEDformer,
             'Informer': Informer,
             'DLinear': DLinear,
             # 'FiLM': FiLM,
@@ -68,7 +96,15 @@ class Exp_Main(Exp_Basic):
             'CNN_LINEAR_LINEAR_V2': CNN_LINEAR_LINEAR_V2,
             'LBCNN_LINEAR': LBCNN_LINEAR,
             'CNN_LINEAR': CNN_LINEAR,
-            'Reformer': Reformer
+            'Reformer': Reformer,
+            'FreTS': FreTS,
+            'PatchTST': PatchTST,
+            'ModernTCN': ModernTCN,
+            'RPTK': REV_Patch_TCN_Kan,
+            'RPTM2': REV_Patch_TCN2_MLP,
+            'RPTK2': REV_Patch_TCN2_KAN,
+            'REV_TCN_KAN': REV_TCN_KAN,
+            'REV_TCN_CFFN_KAN': REV_TCN_CFFN_KAN
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
@@ -120,6 +156,24 @@ class Exp_Main(Exp_Basic):
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    if self.args.features == 'M':
+                        # zyc 根据实际数据集更改，多变量预测多变量
+                        f_dim = 0
+                    elif self.args.features == 'MS':
+                        # 多变量预测单变量 特征为前n-1列，最后一列第n列为输出结果
+                        f_dim = -1
+                    else:
+                        f_dim = -8
+
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+
+                    pred = outputs.detach().cpu()
+                    true = batch_y.detach().cpu()
+
+                    loss = criterion(pred, true)
+
+                    total_loss.append(loss)
                 else:
                     if 'Linear' in self.args.model or 'TST' in self.args.model:
                         outputs = self.model(batch_x)
@@ -128,16 +182,25 @@ class Exp_Main(Exp_Basic):
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                # f_dim = -1 if self.args.features == 'MS' else 0
+                    if self.args.features == 'M':
+                        # zyc 根据实际数据集更改，多变量预测多变量
+                        f_dim = 0
+                    elif self.args.features == 'MS':
+                        # 多变量预测单变量 特征为前n-1列，最后一列第n列为输出结果
+                        f_dim = -1
+                    else:
+                        f_dim = -8
 
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
 
-                loss = criterion(pred, true)
+                    pred = outputs.detach().cpu()
+                    true = batch_y.detach().cpu()
 
-                total_loss.append(loss)
+                    loss = criterion(pred, true)
+
+                    total_loss.append(loss)
         total_loss = np.average(total_loss)
         self.model.train()
         return total_loss
@@ -198,7 +261,15 @@ class Exp_Main(Exp_Basic):
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                        f_dim = -1 if self.args.features == 'MS' else 0
+                        # f_dim = -1 if self.args.features == 'MS' else 0
+                        if self.args.features == 'M':
+                            # zyc 根据实际数据集更改，多变量预测多变量
+                            f_dim = 0
+                        elif self.args.features == 'MS':
+                            # 多变量预测单变量 特征为前n-1列，最后一列第n列为输出结果
+                            f_dim = -1
+                        else:
+                            f_dim = -8
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
@@ -219,8 +290,13 @@ class Exp_Main(Exp_Basic):
                             # print(batch_y_mark.shape)
                             # print("---end---")
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    # print(outputs.shape,batch_y.shape)
-                    f_dim = -1 if self.args.features == 'MS' else 0
+                    if self.args.features=='M':
+                        # zyc 根据实际数据集更改
+                        f_dim=0
+                    elif self.args.features == 'MS':
+                        f_dim=-1
+                    else:
+                        f_dim = -8
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                     loss = criterion(outputs, batch_y)
@@ -253,6 +329,8 @@ class Exp_Main(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            # print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+            #     epoch + 1, train_steps, train_loss, vali_loss))
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -287,7 +365,7 @@ class Exp_Main(Exp_Basic):
         
         if test:
             print('loading model') #checkpoints\checkpoint_denormalization_384_288.pth
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/checkpoint_denormalization_384_288.pth')))
+            self.model.load_state_dict(torch.load(os.path.join(r'checkpoints\custom2_48_1_MLP_REV_Patch_TCN_custom2_ftM_sl48_pl1_ebtimeF_test_0\checkpoint.pth')))
             # self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
             # print(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'))
 
@@ -331,10 +409,20 @@ class Exp_Main(Exp_Basic):
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                f_dim = -1 if self.args.features == 'MS' else 0
-                # print(outputs.shape,batch_y.shape)
+                # f_dim = -1 if self.args.features == 'MS' else 0
+                if self.args.features == 'M':
+                    # zyc 根据实际数据集更改
+                    f_dim = 0
+                elif self.args.features == 'MS':
+                    f_dim = -1
+                else:
+                    f_dim = -8
+
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                # print("outputs",outputs.shape)
+                # print("batch_y",batch_y.shape)
+
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
@@ -343,6 +431,8 @@ class Exp_Main(Exp_Basic):
 
                 preds.append(pred)
                 trues.append(true)
+                batch_x1=batch_x[:, -self.args.pred_len:, f_dim:]
+                batch_x1 = batch_x1.detach().cpu().numpy()
                 inputx.append(batch_x.detach().cpu().numpy())
                 if i % 20 == 0:
                     input = batch_x.detach().cpu().numpy()
@@ -355,83 +445,96 @@ class Exp_Main(Exp_Basic):
             exit()
         preds = np.array(preds)
         trues = np.array(trues)
-        inputx = np.array(inputx)
+        # inputx = np.array(inputx)
+        # print(preds.shape)
+        # print(trues.shape)
 
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        inputx = inputx.reshape(-1, inputx.shape[-2], inputx.shape[-1])
+        # inputx = inputx.reshape(-1, inputx.shape[-2], inputx.shape[-1])
+
 
         # result save
         folder_path = './results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
-        # (3424, 288, 78) 获取子数组 (1, 288, 78)
-        import plotly.graph_objects as go
 
-        #预测结果图
-        i = [500, 1000, 3000, 3100]
-        j = [9, 24, 27, 28, 70, 71]
-        for row in i:
-            for col in j:
-                if row == 3100 and col == 24 or row == 3000 and col == 27 or row == 500 and col == 28 or row == 1000 and col == 9 or row == 1000 and col == 70 or row == 3000 and col == 71:
-                    import plotly.graph_objects as go
-                    sub_preds = preds[row]
-                    sub_pred = sub_preds[:, col:col + 1]
-                    sub_trues = trues[row]
-                    sub_true = sub_trues[:, col:col + 1]
-                    # 计算误差
-                    errors = sub_true - sub_pred
-                    x = np.arange(1, 289)
-                    # 创建预测值和真实值线的Scatter对象
-                    trace_pred = go.Scatter(x=x, y=sub_pred.ravel(), name='Predicted',
-                                            line=dict(color='#4169E1', width=2))
-                    trace_actual = go.Scatter(x=x, y=sub_true.ravel(), name='Actual',
-                                              line=dict(color='#ff7f0e', width=2))
-                    # 创建误差线的Scatter对象
-                    trace_error = go.Bar(x=x, y=errors.ravel(), name='Error', marker=dict(color='#828282'))
-                    # 创建误差阴影的填充区域
-                    trace_error_shade = go.Scatter(
-                        x=np.concatenate([x, x[::-1]]),
-                        y=np.concatenate([sub_pred.ravel() - (sub_pred.max() - sub_pred.min()) / 10,
-                                          (sub_pred.ravel() + (sub_pred.max() - sub_pred.min()) / 10)[::-1]]),
-                        fill='toself',
-                        fillcolor='#4169E1',  # 将fillcolor的值更改为橙色的色值
-                        opacity=0.3,
-                        showlegend=False
-                    )
 
-                    # 创建y=0的虚线
-                    trace_zero = go.Scatter(x=[1, 288], y=[0, 0], name='Zero',
-                                            line=dict(color='red', width=2, dash='dash'),showlegend=False)
-                    # 将所有的Scatter对象添加到图表中
-                    fig = go.Figure()
-                    fig.add_trace(trace_pred)
-                    fig.add_trace(trace_actual)
-                    fig.add_trace(trace_error)
-                    fig.add_trace(trace_error_shade)
-                    fig.add_trace(trace_zero)
-                    # 更新布局
-                    fig.update_layout(
-                        xaxis=dict(showgrid=False, showline=True, linewidth=2, linecolor='black', showticklabels=True,
-                                   ticks='outside', tickwidth=1, tickcolor='black', tickfont=dict(size=18)),
-                        yaxis=dict(title_text=str(row) + "_" + str(col), showgrid=False, showline=True, linewidth=2,
-                                   linecolor='black', showticklabels=True, ticks='outside', tickwidth=1,
-                                   tickcolor='black',
-                                   tickfont=dict(size=18),
-                                   range=[min(sub_pred.min(), sub_true.min(), errors.min()),
-                                          max(sub_pred.max(), sub_true.max(), errors.max())]),
-                        plot_bgcolor="white",
-                        width=900,
-                        height=600,
-                        legend=dict(xanchor='right', yanchor='top', orientation='h', x=0.99, y=1.1,font=dict(size=18)),
-                    )
-                    # 显示图表
-                    fig.show()
+        preds=preds.reshape(preds.shape[0]*preds.shape[1],preds.shape[2])
+        trues=trues.reshape(trues.shape[0]*trues.shape[1],trues.shape[2])
+        # print("preds",preds.shape)
+        # print("trues",trues.shape)
 
-                else:
-                    continue
 
-        mae, mse, rmse, mape, mspe, rse, corr, r2 = metric(preds, trues)
+	# 预测结果图 0-3 5-1
+
+        j = [-8, -7, -6, -5, -4, -3, -2, -1]
+        for col in j:
+            # 示例数据
+            sub_true = trues[:, col]
+            sub_pred = preds[:, col]
+            x = np.arange(sub_true.shape[0])
+            # 创建图形并绘制实际值和预测值
+            plt.figure(figsize=(16, 6))
+            sns.lineplot(x=x, y=sub_true, label='GroundTruth', color='blue', linestyle='-')
+            sns.lineplot(x=x, y=sub_pred, label='Prediction', color='red', linestyle='--')
+            # 设置 y 轴刻度范围
+            plt.ylim(np.min(sub_true)*1.3, np.max(sub_true)*1.3)
+            # 添加标题和标签，并设置字体大小
+            # plt.xlabel('Time(0.5s)', fontsize=18)
+            # plt.ylabel('Acceleration(g)', fontsize=18)
+            # 添加图例并设置图例字体大小和位置
+            # plt.legend(loc='upper right', prop={'size': 14})
+            # 设置 x 和 y 轴刻度的字体大小
+            plt.xticks(fontsize=20)
+            plt.yticks(fontsize=20)
+            # 显示网格线
+            plt.grid(False)
+            # 计算 R^2 分数
+            # r2 = r2_score(sub_true, sub_pred)
+            # 将 R^2 分数显示在图的左上角
+            # plt.text(0, np.max(sub_true), f'R^2 Score: {r2:.4f}', fontsize=14, color='green', verticalalignment='top')
+            
+            # 保存图像
+            plt.savefig('actual_vs_predicted' + str(col)+'_'+str(self.args.pred_len) + '.png')
+            plt.close()
+            # 显示图形
+            plt.show()
+
+        j = [-8, -7, -6, -5, -4, -3, -2, -1]
+        for col in j:
+            plt.figure(figsize=(6, 6))
+            # 生成示例数据
+            x = preds[:, col]
+            y = trues[:, col]
+            # 绘制Hexbin图
+            joint = sns.jointplot(x=x, y=y, kind="hex", color="blue",marginal_kws=dict(bins=25, color=sns.color_palette("muted")[4], edgecolor='black'),joint_kws=dict(gridsize=30))
+            # 设置刻度字体大小
+            joint.ax_joint.tick_params(axis='both', which='major', labelsize=20)  
+            # 设置主刻度标签大小
+            joint.ax_joint.tick_params(axis='both', which='minor', labelsize=20)         
+            # 绘制对角线
+            joint.ax_joint.plot(np.linspace(min(x), max(x), 10), np.linspace(min(y), max(y), 10), color='black')
+            # 设置背景为白色
+            sns.set(style="ticks")
+            sns.set_palette("pastel")
+            plt.xticks(fontsize=20)
+            plt.yticks(fontsize=20)
+            # 去除网格线
+            sns.despine()
+            # 添加x轴和y轴标签
+            # joint.set_axis_labels("Prediction(g)", "GroundTruth(g)")
+            # 调整左边距
+            plt.subplots_adjust(left=0.2)
+            plt.subplots_adjust(bottom=0.09)
+            
+            # 保存图像
+            plt.savefig('hexbin' + str(col)+'_'+str(self.args.pred_len)  + '.png')
+            # 显示图形
+            plt.show()
+            plt.close()        
+
+        mae, mse, rse, r2 = metric(preds, trues)
         print('mse:{}, mae:{}, rse:{}, r2:{}'.format(mse, mae, rse, r2))
         f = open("result.txt", 'a')
         f.write(setting + "  \n")
@@ -441,7 +544,7 @@ class Exp_Main(Exp_Basic):
         f.close()
 
         # np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr]))
-        # np.save(folder_path + 'pred.npy', preds)
+        np.save(folder_path + 'pred.npy', preds)
         # np.save(folder_path + 'true.npy', trues)
         # np.save(folder_path + 'x.npy', inputx)
         return

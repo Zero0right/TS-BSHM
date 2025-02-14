@@ -14,17 +14,17 @@ if __name__ == '__main__':
     # basic config
     parser.add_argument('--is_training', type=int, default=1, help='status')
     parser.add_argument('--model_id', type=str, default='test', help='model id')
-    parser.add_argument('--model', type=str, default='NHITS',
+    parser.add_argument('--model', type=str, default='TCN_LINEAR',
                         help='model name, options: [Autoformer, Informer, Transformer]')
 
     # data loader
-    parser.add_argument('--data', type=str, default='custom', help='dataset type')
-    parser.add_argument('--root_path', type=str, default='./dataset/', help='root path of the data file')
-    parser.add_argument('--data_path', type=str, default='resampled_sensor_data_5.csv', help='data file ETTh1.csv resampled_sensor_data_5.csv')
+    parser.add_argument('--data', type=str, default='custom2', help='dataset type:ETTh1')
+    parser.add_argument('--root_path', type=str, default='./dataset/', help='root path of the data file ./dataset/')
+    parser.add_argument('--data_path', type=str, default='modified_dataset.csv', help='data file ETTh1.csv resampled_sensor_data_5.csv')
     parser.add_argument('--features', type=str, default='M',
                         help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
     parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
-    parser.add_argument('--freq', type=str, default='t',
+    parser.add_argument('--freq', type=str, default='s',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
     parser.add_argument('--embed', type=str, default='timeF',
@@ -33,9 +33,9 @@ if __name__ == '__main__':
     # task
     parser.add_argument('--seq_len', type=int, default=48, help='input sequence length')
     parser.add_argument('--pred_len', type=int, default=576, help='prediction sequence length')
-    parser.add_argument('--enc_in', type=int, default=78, help='channel or dimension')
+    parser.add_argument('--enc_in', type=int, default=23, help='channel or dimension')
 
-    # model
+    # SegRNN
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
     parser.add_argument('--stride', type=int, default=8, help='stride')
     parser.add_argument('--padding_patch', default='end', help='None: None; end: padding on the end')
@@ -43,13 +43,13 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.3, help='dropout')
 
     # DLinear
-    parser.add_argument('--individual', action='store_true', default=False, help='DLinear: a linear layer for each variate(channel) individually')
+    # parser.add_argument('--individual', action='store_true', default=False, help='DLinear: a linear layer for each variate(channel) individually')
 
     # Formers
     parser.add_argument('--embed_type', type=int, default=0,
                         help='0: default 1: value embedding + temporal embedding + positional embedding 2: value embedding + temporal embedding 3: value embedding + positional embedding 4: value embedding')
-    parser.add_argument('--dec_in', type=int, default=78, help='decoder input size')
-    parser.add_argument('--c_out', type=int, default=78, help='output size')
+    parser.add_argument('--dec_in', type=int, default=7, help='decoder input size')
+    parser.add_argument('--c_out', type=int, default=7, help='output size')
 
     parser.add_argument('--n_heads', type=int, default=4, help='num of heads')
     parser.add_argument('--e_layers', type=int, default=1, help='num of encoder layers')
@@ -94,6 +94,19 @@ if __name__ == '__main__':
                         help='the start index of variates for partial training, '
                              'you can select [partial_start_index, min(enc_in + partial_start_index, N)]')
 
+    # PatchTST
+    parser.add_argument('--fc_dropout', type=float, default=0.05, help='fully connected dropout')
+    parser.add_argument('--head_dropout', type=float, default=0.0, help='head dropout')
+    # parser.add_argument('--patch_len', type=int, default=16, help='patch length')
+    # parser.add_argument('--stride', type=int, default=8, help='stride')
+    # parser.add_argument('--padding_patch', default='end', help='None: None; end: padding on the end')
+    parser.add_argument('--revin', type=int, default=1, help='RevIN; True 1 False 0')
+    parser.add_argument('--affine', type=int, default=0, help='RevIN-affine; True 1 False 0')
+    parser.add_argument('--subtract_last', type=int, default=0, help='0: subtract mean; 1: subtract last')
+    parser.add_argument('--decomposition', type=int, default=0, help='decomposition; True 1 False 0')
+    parser.add_argument('--kernel_size', type=int, default=25, help='decomposition-kernel')
+    parser.add_argument('--individual', type=int, default=0, help='individual head; True 1 False 0')
+
     #zyc
     parser.add_argument('--cnn_output', type=int, default=1, help='cnn output')
 
@@ -111,7 +124,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
+    parser.add_argument('--batch_size', type=int, default=2, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=3, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='optimizer learning rate')
     parser.add_argument('--des', type=str, default='test', help='exp description')
